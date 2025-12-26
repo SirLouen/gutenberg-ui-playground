@@ -15,23 +15,36 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          path: gutenberg-ui-playground
+
+      - name: Checkout Gutenberg
+        uses: actions/checkout@v4
+        with:
+          repository: WordPress/gutenberg
+          path: gutenberg
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
+          cache-dependency-path: gutenberg-ui-playground/package-lock.json
 
       - name: Install dependencies
+        working-directory: gutenberg-ui-playground
         run: npm ci
 
       - name: Build plugin
+        working-directory: gutenberg-ui-playground
         run: npm run build
 
       - name: Create dist directory
+        working-directory: gutenberg-ui-playground
         run: mkdir -p dist
 
       - name: Create plugin zip
+        working-directory: gutenberg-ui-playground
         run: |
           zip -r dist/gutenberg-ui-playground.zip \
             gutenberg-ui-playground.php \
@@ -42,5 +55,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: gutenberg-ui-playground
-          path: dist/gutenberg-ui-playground.zip
+          path: gutenberg-ui-playground/dist/gutenberg-ui-playground.zip
           if-no-files-found: error
