@@ -1,0 +1,20 @@
+{
+	"name": "gutenberg-ui-playground",
+	"version": "1.0.0",
+	"private": true,
+	"scripts": {
+		"build": "wp-scripts build",
+		"start": "wp-scripts start"
+	},
+	"devDependencies": {
+		"@wordpress/scripts": "^31.2.0"
+	},
+	"dependencies": {
+		"@babel/standalone": "^7.28.5",
+		"@base-ui/react": "^1.0.0",
+		"@wordpress/element": "*",
+		"@wordpress/theme": "*",
+		"@wordpress/ui": "*",
+		"clsx": "^2.1.1"
+	}
+}
