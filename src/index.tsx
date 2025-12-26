@@ -73,6 +73,19 @@ function generateBlueprint( code: string ): object {
 		landingPage: '/wp-admin/admin.php?page=gutenberg-ui-playground',
 		steps: [
 			{
+				step: 'mkdir',
+				path: '/tmp/gutenberg',
+			},
+			{
+				step: 'writeFile',
+				path: '/tmp/gutenberg/artifact.zip',
+				data: {
+					resource: 'url',
+					url: '/plugin-proxy.php?org=WordPress&repo=gutenberg&workflow=Build%20Gutenberg%20Plugin%20Zip&artifact=gutenberg-plugin&branch=trunk',
+					caption: 'Downloading Gutenberg branch trunk',
+				},
+			},
+			{
 				step: 'installPlugin',
 				pluginData: {
 					resource: 'url',
