@@ -4,7 +4,8 @@
 	"private": true,
 	"scripts": {
 		"build": "wp-scripts build",
-		"start": "wp-scripts start"
+		"start": "wp-scripts start",
+		"build:zip": "npm run build && mkdir -p dist && rm -f dist/gutenberg-ui-playground.zip && zip -r dist/gutenberg-ui-playground.zip gutenberg-ui-playground.php build/ -x '*.map'"
 	},
 	"devDependencies": {
 		"@wordpress/scripts": "^31.2.0"
