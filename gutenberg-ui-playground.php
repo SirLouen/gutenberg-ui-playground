@@ -66,7 +66,7 @@ add_action( 'admin_enqueue_scripts', function ( $hook ) {
 		array(
 			'restUrl'   => rest_url( 'gutenberg-ui-playground/v1/' ),
 			'nonce'     => wp_create_nonce( 'wp_rest' ),
-			'pluginZip' => 'https://example.com/gutenberg-ui-playground.zip',
+			'pluginZip' => 'https://github.com/SirLouen/gutenberg-ui-playground/raw/refs/heads/trunk/dist/gutenberg-ui-playground.zip',
 		)
 	);
 
