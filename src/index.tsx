@@ -10,7 +10,8 @@ declare const Babel: { transform: ( code: string, options: object ) => { code: s
 declare const gutenbergUiPlayground: {
 	restUrl: string;
 	nonce: string;
-	pluginZip: string;
+	githubToken: string;
+	settingsUrl: string;
 };
 
 // Make UI components available for the playground
@@ -58,8 +59,73 @@ async function saveCodeToDatabase( code: string ): Promise< boolean > {
 	}
 }
 
+async function createGist( blueprint: object, token: string ): Promise< string | null > {
+	try {
+		const response = await fetch( 'https://api.github.com/gists', {
+			method: 'POST',
+			headers: {
+				'Accept': 'application/vnd.github+json',
+				'Authorization': `Bearer ${ token }`,
+				'X-GitHub-Api-Version': '2022-11-28',
+				'Content-Type': 'application/json',
+			},
+			body: JSON.stringify( {
+				description: 'Gutenberg UI Playground Blueprint',
+				public: true,
+				files: {
+					'blueprint.json': {
+						content: JSON.stringify( blueprint, null, 2 ),
+					},
+				},
+			} ),
+		} );
+
+		if ( ! response.ok ) {
+			const error = await response.json();
+			throw new Error( error.message || 'Failed to create gist' );
+		}
+
+		const data = await response.json();
+		// Return the raw URL for the blueprint.json file
+		return data.files[ 'blueprint.json' ].raw_url;
+	} catch ( e ) {
+		console.error( 'Failed to create gist:', e );
+		return null;
+	}
+}
+
+async function fetchPluginZipBase64(): Promise< string | null > {
+	try {
+		const response = await fetch( `${ gutenbergUiPlayground.restUrl }plugin-zip`, {
+			headers: {
+				'X-WP-Nonce': gutenbergUiPlayground.nonce,
+			},
+		} );
+		const text = await response.text();
+		try {
+			const data = JSON.parse( text );
+			if ( ! response.ok ) {
+				console.error( 'Failed to fetch plugin ZIP:', data );
+				return null;
+			}
+			return data.base64 || null;
+		} catch {
+			console.error( 'PHP Error:', text );
+			return null;
+		}
+	} catch ( e ) {
+		console.error( 'Error fetching plugin ZIP:', e );
+		return null;
+	}
+}
+
 // Generate blueprint.json
-function generateBlueprint( code: string ): object {
+function generateBlueprint( code: string, pluginZipBase64?: string ): object {
+	// Use data URL if base64 is provided, otherwise use a placeholder
+	const pluginZipUrl = pluginZipBase64
+		? `data:application/zip;base64,${ pluginZipBase64 }`
+		: 'PLUGIN_ZIP_PLACEHOLDER';
+
 	return {
 		$schema: 'https://playground.wordpress.net/blueprint-schema.json',
 		preferredVersions: {
@@ -86,10 +152,22 @@ function generateBlueprint( code: string ): object {
 				},
 			},
 			{
+				step: 'unzip',
+				zipPath: '/tmp/gutenberg/artifact.zip',
+				extractToPath: '/tmp/gutenberg',
+			},
+			{
+				step: 'installPlugin',
+				pluginData: {
+					resource: 'vfs',
+					path: '/tmp/gutenberg/gutenberg.zip',
+				},
+			},
+			{
 				step: 'installPlugin',
 				pluginData: {
 					resource: 'url',
-					url: gutenbergUiPlayground.pluginZip,
+					url: pluginZipUrl,
 				},
 			},
 			{
@@ -187,8 +265,15 @@ function Preview( { code }: { code: string } ) {
 
 function BlueprintGenerator( { code }: { code: string } ) {
 	const [ copied, setCopied ] = useState( false );
-	const blueprint = generateBlueprint( code );
-	const blueprintJson = JSON.stringify( blueprint, null, 2 );
+	const [ isUploading, setIsUploading ] = useState( false );
+	const [ gistUrl, setGistUrl ] = useState< string | null >( null );
+	const [ error, setError ] = useState< string | null >( null );
+
+	const hasToken = Boolean( gutenbergUiPlayground.githubToken );
+	// Preview blueprint without the embedded ZIP (shows placeholder)
+	const previewBlueprint = generateBlueprint( code );
+	const blueprintJson = JSON.stringify( previewBlueprint, null, 2 )
+		.replace( '"PLUGIN_ZIP_PLACEHOLDER"', '"data:application/zip;base64,..."' );
 
 	const handleCopy = async () => {
 		await navigator.clipboard.writeText( blueprintJson );
@@ -196,13 +281,50 @@ function BlueprintGenerator( { code }: { code: string } ) {
 		setTimeout( () => setCopied( false ), 2000 );
 	};
 
-	const handleOpenPlayground = () => {
-		const encodedBlueprint = encodeURIComponent( JSON.stringify( blueprint ) );
-		window.open(
-			`https://playground.wordpress.net/#${ encodedBlueprint }`,
-			'_blank'
-		);
+	const handleUploadToGist = async () => {
+		if ( ! hasToken ) {
+			return;
+		}
+
+		setIsUploading( true );
+		setError( null );
+
+		// Fetch the plugin ZIP as base64
+		const pluginZipBase64 = await fetchPluginZipBase64();
+		if ( ! pluginZipBase64 ) {
+			setError( 'Failed to generate plugin ZIP.' );
+			setIsUploading( false );
+			return;
+		}
+
+		// Generate blueprint with embedded ZIP
+		const blueprint = generateBlueprint( code, pluginZipBase64 );
+
+		const rawUrl = await createGist( blueprint, gutenbergUiPlayground.githubToken );
+		if ( rawUrl ) {
+			setGistUrl( rawUrl );
+		} else {
+			setError( 'Failed to create gist. Check your token permissions in Settings.' );
+		}
+		setIsUploading( false );
 	};
+
+	const handleOpenPlayground = () => {
+		if ( gistUrl ) {
+			// Use the gist URL
+			window.open(
+				`https://playground.wordpress.net/?blueprint-url=${ encodeURIComponent( gistUrl ) }`,
+				'_blank'
+			);
+		} else {
+			setError( 'Please upload to Gist first to open in Playground.' );
+		}
+	};
+
+	// Reset gist URL when code changes
+	useEffect( () => {
+		setGistUrl( null );
+	}, [ code ] );
 
 	return (
 		<div className="playground-blueprint">
@@ -215,14 +337,38 @@ function BlueprintGenerator( { code }: { code: string } ) {
 					>
 						{ copied ? 'Copied!' : 'Copy JSON' }
 					</button>
+					{ hasToken ? (
+						<button
+							className="button button-secondary"
+							onClick={ handleUploadToGist }
+							disabled={ isUploading }
+						>
+							{ isUploading ? 'Uploading...' : gistUrl ? '✓ Uploaded to Gist' : 'Upload to Gist' }
+						</button>
+					) : (
+						<a
+							className="button button-secondary"
+							href={ gutenbergUiPlayground.settingsUrl }
+						>
+							Configure GitHub Token
+						</a>
+					) }
 					<button
 						className="button button-primary"
 						onClick={ handleOpenPlayground }
+						disabled={ ! gistUrl }
 					>
 						Open in Playground
 					</button>
 				</div>
 			</div>
+			{ error && <div className="playground-error">{ error }</div> }
+			{ gistUrl && (
+				<div className="playground-gist-url">
+					<strong>Gist URL:</strong>{ ' ' }
+					<a href={ gistUrl } target="_blank" rel="noopener noreferrer">{ gistUrl }</a>
+				</div>
+			) }
 			<pre className="playground-blueprint-code">{ blueprintJson }</pre>
 		</div>
 	);
